@@ -1,0 +1,203 @@
+<?php
+// $OBJ == calling instance
+if (!empty($OBJ)) {
+    $uri    = $OBJ->uri;
+    $config = $OBJ->config;
+}
+// Reload CSV file
+if (!empty($_POST['reset'])) {
+    $_SESSION = [];
+}
+$hdrs = ['category','amount','answer','question','url'];
+$ques = $_SESSION[basename(__FILE__)]['ques'] ?? [];
+$cats = $_SESSION[basename(__FILE__)]['cats'] ?? [];
+if (empty($ques)) {
+    try {
+        $fn = BASE_DIR . '/data/jeopardy.csv';
+        $obj = new SplFileObject($fn, 'r');
+        while ($row = $obj->fgetcsv()) {
+            if (empty($row)) continue;
+            if (count($hdrs) !== count($row)) continue;
+            $row = array_combine($hdrs, $row);
+            $amt = (int) $row['amount'];
+            $cat = str_replace(' ', '', $row['category']);
+            $key = sprintf('%04d_%s', $amt, $cat);
+            $ques[$key] = $row;
+            $cats[$row['category']] = $row['category'];
+        }
+        sort($cats);
+        $_SESSION[basename(__FILE__)]['ques'] = $ques;
+        $_SESSION[basename(__FILE__)]['cats'] = $cats;
+    } catch (Throwable $t) {
+        var_dump($ques);
+        echo $t;
+        exit;
+    }
+}
+$iter = new ArrayIterator($ques);
+$iter->ksort();
+// AJAX request handler
+$ajax_url = '/jeopardy';
+if (!empty($_GET['key'])) {
+    echo json_encode($iter->offsetGet($_GET['key']));
+    exit;
+}
+?>
+  <style>
+  .spacing {
+    margin:10px;
+  }
+  .table1 {
+    width:100%;
+  }
+  .cell {
+    width:16%;
+    color:yellow;
+    text-align:center;
+    border:medium solid black;
+    background-color:#4D4DED;
+    font-size:16pt;
+    padding:10px;
+  }
+  .cat {
+    width:16%;
+    color:white;
+    text-align:center;
+    border:medium solid black;
+    background-color:#4D4DED;
+    font-size:16pt;
+    padding:10px;
+  }
+  p {
+    font-size:16pt;
+  }
+  a:hover,button:hover {
+    cursor: pointer;
+  }
+  </style>
+  <!-- Header -->
+  <div class="jumbotron">
+    <h1 class="display-4 mt-5 mb-2">USA Jeopardy</h1>
+    <div class="row">
+        <div class="col-md-6">
+            <p class="lead mb-5">Each player rolls the dice.
+            The player with the highest roll chooses the first category and the amount.
+            The MC reveals the answer.
+            The first player to type an "X" on Teams chat gets to state the question.
+            If the question is a reasonably close match, the player adds the amount to their score, and chooses the next question.
+            If the answer is not correct, the player subtracts the amount from their score.
+            On the MC's signal, the remaining players compete to provide the question that reasonably closely match.
+            When all answers have been revealed, or when 30 minutes are up, the player with the highest score wins.
+            </p>
+        </div>
+        <div class="col-md-6">
+        <img src="/images/jeopardy.jpg" width="400px;" height="auto"/>
+        </div>
+    </div>
+  </div>
+
+  <div class="container" style="height:500px;bg-color: light yellow;width:100%;">
+    <div class="row">
+        <div class="col-md-6">
+        <table class="table1">
+        <tr><th class="cat"><?= implode('</th><th class="cat">', $cats); ?></th></tr>
+        <?php
+            $html = '';
+            $cols = count($cats);
+            $stop = FALSE;
+            while ($iter->valid()) {
+                $html .= '<tr>';
+                for ($x = 0; $x < $cols; $x++) {
+                    if (!$iter->valid()) break;
+                    $key = $iter->key();
+                    $val = $iter->current();
+                    error_log(var_export($val, TRUE));
+                    $html .= '<td class="cell">'
+                           . sprintf('<a name="%s" onClick="show(\'%s\')">$%d</a>', $key, $key, $val['amount'])
+                           . '</td>';
+                    $iter->next();
+                }
+                $html .= '</tr>' . PHP_EOL;
+            }
+            echo $html;
+        ?>
+        </table>
+        <br />
+        1: <input name="team_1" type="number" value="9000" step="200" style="width:60px;" />&nbsp;
+        2: <input name="team_2" type="number" value="9000" step="200" style="width:60px;" />&nbsp;
+        3: <input name="team_3" type="number" value="9000" step="200" style="width:60px;" />&nbsp;
+        4: <input name="team_4" type="number" value="9000" step="200" style="width:60px;" />&nbsp;
+        5: <input name="team_5" type="number" value="9000" step="200" style="width:60px;" />&nbsp;
+        6: <input name="team_6" type="number" value="9000" step="200" style="width:60px;" />
+        </div>
+        <div class="col-md-5">
+            <div style="margin-left:40px;">
+            <form name="jeopardy" method="post">
+            <input type="button" id="roll" value="Roll Dice"/>
+            &nbsp;
+            <input type="submit" id="reset" name="reset" value="Reset" />
+            </form>
+            <div id="text"></div>
+            </div>
+        </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.1.min.js" integrity="sha256-o88AwQnZB+VDvE9tvIXrMQaPlFFSUTR+nldQm1LuPXQ=" crossorigin="anonymous"></script>
+  <script language="javascript">
+    function getRandomInt(min, max) {
+        min = Math.ceil(min);
+        max = Math.floor(max) + 1;
+        return Math.floor(Math.random() * (max - min) + min);
+    }
+    function show(id)
+    {
+        console.log('show:' + id);
+        $('#text').empty();
+        $.ajax({
+            url: "<?= $ajax_url; ?>" + "?key=" + id,
+            type: "GET",
+            dataType: "json",
+            success: function (data) {
+                text = '<hr />'
+                     + '<p><b>'
+                     + data['answer']
+                     + '</b></p>'
+                     + '<hr />'
+                     + '<a name="answer" onClick="question(\'' + id + '\')" />Question</a>';
+                $('#text').html(text)
+            }
+        });
+    }
+    function question(id)
+    {
+        console.log('question:' + id);
+        $('#text').empty();
+        $.ajax({
+            url: "<?= $ajax_url; ?>" + "?key=" + id,
+            type: "GET",
+            dataType: "json",
+            success: function (data) {
+                text = '<hr />'
+                     + '<p>'
+                     + data['answer']
+                     + '</p>'
+                     + '<hr />'
+                     + '<p>'
+                     + '<b>' + data['question'] + '</b>'
+                     + '<br />'
+                     + '<hr />'
+                     + '<a target="_blank" href="' + data['url'] + '">Learn More</a>'
+                     + '</p>';
+                $('#text').html(text)
+            }
+        });
+    }
+    $('#roll').click(function () {
+        images = '<br /><br />'
+               + '<img src="/images/dice_' + getRandomInt(1,6) + '.png" />'
+               + '&nbsp;&nbsp;'
+               + '<img src="/images/dice_' + getRandomInt(1,6) + '.png" />';
+        $('#text').empty().html(images);
+    });
+  </script>

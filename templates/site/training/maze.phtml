@@ -1,0 +1,219 @@
+<?php
+use FileCMS\Common\Generic\Messages;
+use PhpTraining\Maze\{Constants,Map,Runner,Plan,Translate,Process};
+if (!empty($OBJ)) {
+    $uri    = $OBJ->uri;
+    $config = $OBJ->config;
+} else {
+    (Messages::getInstance())->addMessage(Constants::ERR_ERR);
+    include HTML_DIR . '/error.phtml';
+    exit;
+}
+// check to see if AJAX request for grid N
+if (isset($_GET['grid'])) {
+    $key = (int) $_GET['grid'];
+    $translate = $_SESSION['translate'] ?? new Translate($config, Constants::DEF_LANG);
+    if (isset($_SESSION[Constants::GRID][$key])) {
+        $html = $_SESSION[Constants::GRID][$key];
+    } else {
+        $html = $_SESSION[Constants::INIT_GRID] ?? $translate(Constants::ERR_ERR);
+    }
+    echo $html;
+    exit;
+}
+// check for reset
+if (!empty($_POST['reset'])) $_SESSION = [];
+// grab map and runner + get config settings
+$map_name  = $_GET['map'] ?? $_POST['map'] ?? $_SESSION['map'] ?? Constants::DEF_MAP_NAME;
+$run_name  = $_GET['runner'] ?? $_POST['runner'] ?? $_SESSION['runner'] ?? Constants::DEF_RUNNER;
+$ajax_url  = $config['PHP_TRAINING']['maze']['ajax_url'] ?? Constants::AJAX_URL;
+$map_args  = $config['PHP_TRAINING']['maze']['maps'][$map_name] ?? [];
+$run_args  = $config['PHP_TRAINING']['maze']['runner'][$run_name] ?? [];
+$runner    = new Runner($config, $run_args);
+// set language
+$lang = $_REQUEST['lang'] ?? $_SESSION['lang'] ?? $runner->lang ?? Constants::DEF_LANG;
+if (empty($config['PHP_TRAINING']['maze']['translate'][$lang])) {
+    $lang = Constants::DEF_LANG;
+}
+$translate = new Translate($config, ['lang' => $lang]);
+// store values back into session
+$_SESSION['map'] = $map_name;
+$_SESSION['lang'] = $lang;
+$_SESSION['runner'] = $run_name;
+$_SESSION['translate'] = $translate;
+// build and render map
+$run       = [];
+$plan_txt  = '';
+$map       = new Map($config, $map_args);
+$map->buildMap($runner);
+$html = $map->renderAsDiv($runner);
+if (!empty($_POST['run'])) {
+    // pull plan
+    $plan_txt  = $_POST['plan'] ?? '';
+    $plan_txt  = strtoupper(strip_tags($plan_txt));
+    if (!empty($plan_txt)) {
+        // init vars
+        $html  = '';
+        $_SESSION[Constants::GRID] = [];
+        $_SESSION[Constants::INIT_GRID] = '';
+        // configure plan
+        $plan_args = [
+            'runner' => $runner,
+            'map'    => $map,
+        ];
+        $plan = new Plan($config, $plan_args);
+        // run plan
+        $run   = $plan->run($plan_txt);
+        $count = count($run) - 1;
+        foreach ($run as $key => $item) {
+            $prev    = ($key === 0) ? $count : $key - 1;
+            $next    = ($key === $count) ? 0 : $key + 1;
+            $nav     = '<a href="#" onClick="show(' . $prev . ')">'
+                     . '<span style="float:left;font-size:36pt;color:white;background-color:black;">⏪</span>'
+                     . '</a>'
+                     . '<a href="#" onClick="show(' . $next . ')">'
+                     . '<span style="float:right;font-size:36pt;background-color:black;">⏩</span>'
+                     . '</a>';
+            $_SESSION[Constants::GRID][$key] = $item . $nav . PHP_EOL;
+            if (empty($html)) {
+                $html = $_SESSION[Constants::GRID][$key];
+                $_SESSION[Constants::INIT_GRID] = $html;
+            }
+        }
+    }
+}
+$count = (!empty($_SESSION[Constants::GRID])) ? count($_SESSION[Constants::GRID]) : 0;
+$msg   = (Messages::getInstance())->getMessages();
+// set CSS width
+$width = 96;
+$height = 98;
+?>
+<style>
+.east {
+    width:<?= $width ?>%;
+    height:<?= $height ?>%;
+    background: url("/images/east_50px.png") no-repeat;
+}
+.west {
+    width:<?= $width ?>%;
+    height:<?= $height ?>%;
+    background: url("/images/west_50px.png") no-repeat;
+}
+.north {
+    width:<?= $width ?>%;
+    height:<?= $height ?>%;
+    background: url("/images/north_50px.png") no-repeat;
+}
+.south {
+    width:<?= $width ?>%;
+    height:<?= $height ?>%;
+    background: url("/images/south_50px.png") no-repeat;
+}
+.avatar {
+    margin-left:<?= (int) ($width * .2) ?>%;
+    width:<?= (int) ($width * .66) ?>%;
+    height:<?= (int) ($height * .66) ?>%;
+}
+.std-img {
+    width:99%;
+    height:99%;
+    margin:0px;
+}
+.square {
+    float:left;
+    width:100%;
+    height:100%;
+    #margin: 1px;
+    border: thin solid lightgray;
+}
+.fill {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden
+}
+.fill std-img {
+    flex-shrink: 0;
+    min-width: 100%;
+    min-height: 100%
+}
+.col {
+    padding-right: 1px;
+    padding-left: 1px;
+}
+</style>
+<div class="container">
+   <?php if (!empty($msg)) : ?>
+   <!-- form message -->
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-success contact__msg" role="alert">
+                <?= $msg ?>
+            </div>
+        </div>
+    </div>
+    <!-- end message -->
+    <?php endif; ?>
+    <!-- Contacts Form -->
+    <div class="row">
+        <div class="col-md-9">
+            <div id="grid"><?= $html; ?></div>
+        </div>
+        <div class="col-md-3">
+            <form class="maze_form" action="/training/maze" method="post">
+                <div class="form-group">
+                    <br />
+                    <label class="h6 small d-block text-uppercase">
+                        <?= $translate->say(Constants::FORM_LANG); ?>
+                    </label>
+                    Current Language: <?= $lang; ?><br />
+                    <div class="input-group">
+                        <input type="radio" name="lang" value="EN" <?= ($lang === 'EN') ? 'checked' : ''; ?>>English&nbsp;
+                        <input type="radio" name="lang" value="TH" <?= ($lang === 'TH') ? 'checked' : ''; ?>>ไทย&nbsp;
+                        <input name="submit" type="submit" class="btn btn-primary btn-circled" value="<?= $translate->say(Constants::FORM_SUBMIT); ?>">
+                    </div>
+                </div>
+            </form>
+            <hr />
+            <form class="maze_form" action="/training/maze" method="post">
+                <div class="form-group">
+                    <label class="h6 small d-block text-uppercase">
+                        <?= $translate->say(Constants::FORM_PLAN); ?>
+                    </label>
+                    <div class="input-group">
+                        <textarea name="plan" id="plan" rows=12 cols=40 title="<?= $translate->say(Constants::FORM_INS); ?>"><?= htmlspecialchars($plan_txt); ?></textarea>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <div class="input-group">
+                        <input name="run" type="submit" class="btn btn-primary btn-circled" value="<?= $translate->say(Constants::FORM_RUN); ?>" />
+                        &nbsp;&nbsp;
+                        <input name="reset" type="submit" class="btn btn-primary btn-circled" value="<?= $translate->say(Constants::FORM_RESET); ?>" />
+                    </div>
+                </div>
+                <hr />
+                <?= $translate->say(Constants::FORM_CMDS); ?>
+                <hr />
+                <input type="hidden" name="map" value="<?= $map_name ?>" />
+                <input type="hidden" name="runner" value="<?= $run_name ?>" />
+            </form>
+        </div>
+    </div>
+</div> <!-- container -->
+
+<!-- Example assets -->
+<script type="text/javascript" src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script type="text/javascript">
+function show(id)
+{
+    console.log(id);
+    $.ajax({
+        url: "<?= $ajax_url; ?>" + "?grid=" + id,
+        type: "GET",
+        dataType: "html",
+        success: function (data) {
+            $('#grid').html(data)
+        }
+    });
+}
+</script>

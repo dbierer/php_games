@@ -1,0 +1,88 @@
+<?php
+use FileCMS\Common\Generic\Messages;
+use PhpTraining\TicTacToe\TicTacToe;
+if (!empty($OBJ)) {
+    $uri    = $OBJ->uri;
+    $config = $OBJ->config;
+} else {
+    (Messages::getInstance())->addMessage(Constants::ERR_ERR);
+    include HTML_DIR . '/error.phtml';
+    exit;
+}
+
+// init vars
+$valid   = TRUE;
+$message = '';
+$board   = new TicTacToe();
+
+// Clear board if "Clear" button pressed
+if (!empty($_POST['clear'])) $board->clearBoard();
+
+// Get current player
+$current = $board->sanitize($_POST['current'] ?? 'X');
+
+// Handle user input
+if (!empty($_POST['move'])) {
+    $row = (int) ($_POST['row'] ?? 0);
+    $col = (int) ($_POST['col'] ?? 0);
+    if ($board->isValidMove(--$row, --$col)) {
+        $board->setPosition($current, $row, $col);
+		if (!empty($win = $board->checkWin())) {
+			$message = '<b style="color:green;font-size:36pt;">' . $win . ' is the winner!</b>';
+		} elseif (!empty($win = $board->checkTie())) {
+			$message = '<b style="color:purple;">Tie Game!</b>';
+		}
+    } else {
+		$message = '<b style="color:red;"> row ' . ++$row . ' and column ' . ++$col . ' is not a valid move!</b>';
+		$valid = FALSE;
+	}
+}
+?>
+<style>
+.cell_dims_main {
+	width: 100px;
+	height: 100px;
+	text-align: center;
+	vertical-align: center;
+}
+.cell_dims_hdr_row {
+	width: 100px;
+	height: 10px;
+	text-align: center;
+	vertical-align: center;
+}
+.cell_dims_hdr_col {
+	width: 10px;
+	height: 100px;
+	text-align: center;
+	vertical-align: center;
+}
+.cell_border {
+	border: thin solid black;
+}
+.x_o {
+	font-size: 36pt;
+	font-weight: 700;
+}
+.x_color {
+	color: blue;
+}
+.o_color {
+	color: red;
+}
+
+</style>
+<div class="container">
+<h1>Current Player: <?= $board->swap($current) ?></h1>
+<form method="post">
+    Row:&nbsp;<input type="number" name="row" value="1" placeholder="Row (1-3)">&nbsp;
+    Col:&nbsp;<input type="number" name="col" value="1" placeholder="Column (1-3)">&nbsp;
+    <input type="submit" name="move" value="Make Move">
+    <input type="submit" name="clear" value="New Game">
+    <input type="hidden" name="current" value="<?= ($valid) ? $board->swap($current) : $current; ?>" />
+</form>
+<p>NOTE: the "X" player always goes first in this version of the game.</p>
+<!-- Display board -->
+<?= $board->displayBoard(); ?>
+<?= $message; ?>
+</div> <!-- container -->
